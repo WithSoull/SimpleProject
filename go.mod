@@ -1,4 +1,4 @@
-module github.com/WithSoull/SimpleProject
+module github.com/malfoit/SimpleProject
 
 go 1.25.0
 
