@@ -3,49 +3,46 @@ package user
 import (
 	"context"
 	"errors"
+	"net/mail"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/malfoit/SimpleProject/internal/model"
+	userRepo "github.com/malfoit/SimpleProject/internal/repository/user"
 )
 
-func (svc *service) Create(ctx context.Context, user model.User) (email string, err error) {
+func (s *userService) Create(ctx context.Context, name, email, password, passwordConfirm string) (string, error) {
+	name = strings.TrimSpace(name)
+	email = strings.TrimSpace(email)
 
-	if len(user.Name) < 3 {
-		return "", errors.New("имя должно быть длинее 3 символов")
+	if len(name) < 3 || len(name) > 50 {
+		return "", errors.New("name must be between 3 and 50 characters")
 	}
-	if len(user.Name) > 20 {
-		return "", errors.New("имя не должно превышать 20 символов")
+	if _, err := mail.ParseAddress(email); err != nil {
+		return "", errors.New("invalid email format")
 	}
-
-	if strings.TrimSpace(user.Email) == "" {
-		return "", errors.New("почта не может быть пустой")
+	if len(password) < 8 || len(password) > 72 {
+		return "", errors.New("password must be between 8 and 72 characters")
 	}
-	if !strings.Contains(user.Email, "@") {
-		return "", errors.New("неверный формат")
-	}
-	emailParts := strings.Split(user.Email, "@")
-	if len(emailParts) != 2 || emailParts[0] == "" || emailParts[1] == "" {
-		return "", errors.New("неверный формат")
-	}
-	if !strings.Contains(emailParts[1], ".") {
-		return "", errors.New("неверный формат")
+	if password != passwordConfirm {
+		return "", errors.New("passwords do not match")
 	}
 
-	if len(user.Password) < 6 {
-		return "", errors.New("пароль должен содержать не менее 6 символов")
-	}
-	if len(user.Password) > 50 {
-		return "", errors.New("пароль не должен содержать более 50 символов")
-	}
-
-	if user.Password != user.PasswordConfirm {
-		return "", errors.New("пароли не совпадают")
-	}
-
-	err = svc.repo.Create(ctx, user.Name, user.Email, user.Password)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		return "", errors.New("failed to hash password")
+	}
+
+	u := &model.User{
+		UserInfo:     model.UserInfo{Name: name, Email: email},
+		PasswordHash: string(hash),
+	}
+	if err = s.repo.Create(ctx, u); err != nil {
+		if errors.Is(err, userRepo.ErrAlreadyExists) {
+			return "", errors.New("user with this email already exists")
+		}
 		return "", err
 	}
-
-	return user.Email, nil
+	return u.ID, nil
 }
